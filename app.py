@@ -847,8 +847,6 @@ def main():
     st.sidebar.write(f"**创建时间：** {selected_run['created_at']}")
     st.sidebar.write(f"**备注：** {selected_run['notes']}")
 
-    if selected_run["answer_count"] < 100 and selected_run_id != 6:
-        st.sidebar.warning("当前批次样本数较少，可能是未完成的测试 run。老板演示建议选择 Run 6。")
 
     if answers_df.empty:
         st.warning("当前批次没有回答数据。")
