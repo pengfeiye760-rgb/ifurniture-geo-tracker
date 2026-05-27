@@ -1,0 +1,12 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+outputs/
+# Local secrets and generated files
+.env
+.venv/
+__pycache__/
+*.pyc
+outputs/
+data/action.csv
