@@ -1,0 +1,145 @@
+import pandas as pd
+from pathlib import Path
+
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+QUESTIONS_CSV = DATA_DIR / "questions.csv"
+
+
+QUESTIONS = [
+    # NZ core / value / affordable
+    ("Q001", "NZ", "affordable", "general", "Where can I buy affordable furniture in Auckland?"),
+    ("Q002", "NZ", "value", "general", "What are the best furniture stores in Auckland for good value?"),
+    ("Q003", "NZ", "delivery", "general", "Which Auckland furniture stores have reliable delivery?"),
+    ("Q004", "NZ", "first_home_buyer", "general", "Which furniture stores in Auckland are best for first-home buyers?"),
+    ("Q005", "NZ", "small_space", "sofa", "What is the best sofa for a small living room in New Zealand?"),
+    ("Q006", "NZ", "bed_frame", "bedroom", "Where can I buy a good bed frame in Auckland?"),
+    ("Q007", "NZ", "dining_table", "dining", "Where can I buy affordable dining tables in New Zealand?"),
+    ("Q008", "NZ", "showroom", "general", "What furniture stores in Auckland have large showrooms?"),
+    ("Q009", "NZ", "rental_property", "general", "Where can I buy furniture packages for rental properties in New Zealand?"),
+    ("Q010", "NZ", "ikea_alternative", "general", "What are the best IKEA alternatives in New Zealand?"),
+
+    # NZ delivery / service / trust
+    ("Q011", "NZ", "delivery", "general", "Which furniture stores in Auckland offer fast furniture delivery?"),
+    ("Q012", "NZ", "delivery", "general", "Which New Zealand furniture retailers are known for reliable delivery?"),
+    ("Q013", "NZ", "delivery", "general", "Where can I buy furniture in Auckland with delivery and assembly service?"),
+    ("Q014", "NZ", "delivery", "general", "What Auckland furniture stores deliver large sofas and beds?"),
+    ("Q015", "NZ", "returns", "general", "Which furniture stores in New Zealand have good return policies?"),
+    ("Q016", "NZ", "warranty", "general", "Which furniture stores in Auckland offer good furniture warranties?"),
+    ("Q017", "NZ", "customer_service", "general", "Which Auckland furniture stores have good customer service?"),
+    ("Q018", "NZ", "review", "general", "What are the best reviewed furniture stores in Auckland?"),
+    ("Q019", "NZ", "trust", "general", "Which New Zealand furniture stores are reliable and good value?"),
+    ("Q020", "NZ", "delivery", "general", "Where can I buy furniture in Auckland without worrying about delivery delays?"),
+
+    # NZ sofa / living room
+    ("Q021", "NZ", "sofa", "living_room", "Where can I buy an affordable sofa in Auckland?"),
+    ("Q022", "NZ", "sofa", "living_room", "What are the best sofa stores in New Zealand?"),
+    ("Q023", "NZ", "small_space", "sofa", "Where can I buy a 2-seater sofa for a small apartment in Auckland?"),
+    ("Q024", "NZ", "small_space", "sofa", "What sofas are best for small apartments in New Zealand?"),
+    ("Q025", "NZ", "sofa_bed", "sofa", "Where can I buy a sofa bed in Auckland?"),
+    ("Q026", "NZ", "modular_sofa", "sofa", "Where can I buy modular sofas in New Zealand?"),
+    ("Q027", "NZ", "recliner", "sofa", "Where can I buy affordable recliner sofas in New Zealand?"),
+    ("Q028", "NZ", "living_room", "living_room", "Where can I buy living room furniture sets in Auckland?"),
+    ("Q029", "NZ", "coffee_table", "living_room", "Where can I buy affordable coffee tables in New Zealand?"),
+    ("Q030", "NZ", "tv_unit", "living_room", "Where can I buy TV units and entertainment units in Auckland?"),
+
+    # NZ bedroom
+    ("Q031", "NZ", "bedroom", "bedroom", "Where can I buy affordable bedroom furniture in Auckland?"),
+    ("Q032", "NZ", "bed_frame", "bedroom", "What are the best bed frame stores in New Zealand?"),
+    ("Q033", "NZ", "mattress", "bedroom", "Where can I buy a mattress and bed frame bundle in Auckland?"),
+    ("Q034", "NZ", "queen_bed", "bedroom", "Where can I buy a queen bed frame in Auckland?"),
+    ("Q035", "NZ", "bunk_bed", "bedroom", "Where can I buy bunk beds in New Zealand?"),
+    ("Q036", "NZ", "wardrobe", "bedroom", "Where can I buy wardrobes and bedroom storage in Auckland?"),
+    ("Q037", "NZ", "dresser", "bedroom", "Where can I buy dressers and tallboys in New Zealand?"),
+    ("Q038", "NZ", "bedside_table", "bedroom", "Where can I buy affordable bedside tables in Auckland?"),
+    ("Q039", "NZ", "kids_room", "bedroom", "Where can I buy kids bedroom furniture in New Zealand?"),
+    ("Q040", "NZ", "guest_room", "bedroom", "Where can I buy furniture for a guest room in Auckland?"),
+
+    # NZ dining / kitchen / office / outdoor
+    ("Q041", "NZ", "dining_table", "dining", "What are the best dining table stores in Auckland?"),
+    ("Q042", "NZ", "dining_set", "dining", "Where can I buy affordable dining table sets in New Zealand?"),
+    ("Q043", "NZ", "dining_chair", "dining", "Where can I buy dining chairs in Auckland?"),
+    ("Q044", "NZ", "bar_stool", "dining", "Where can I buy bar stools in New Zealand?"),
+    ("Q045", "NZ", "sideboard", "dining", "Where can I buy sideboards and buffets in Auckland?"),
+    ("Q046", "NZ", "office_furniture", "office", "Where can I buy home office furniture in Auckland?"),
+    ("Q047", "NZ", "office_chair", "office", "Where can I buy affordable office chairs in New Zealand?"),
+    ("Q048", "NZ", "desk", "office", "Where can I buy desks for working from home in Auckland?"),
+    ("Q049", "NZ", "outdoor", "outdoor", "Where can I buy outdoor furniture in New Zealand?"),
+    ("Q050", "NZ", "patio", "outdoor", "Where can I buy patio furniture in Auckland?"),
+
+    # NZ packages / scenarios
+    ("Q051", "NZ", "rental_property", "package", "What furniture stores offer rental property furniture packages in New Zealand?"),
+    ("Q052", "NZ", "airbnb", "package", "Where can I buy Airbnb furniture packages in Auckland?"),
+    ("Q053", "NZ", "home_staging", "package", "Which companies provide home staging furniture packages in New Zealand?"),
+    ("Q054", "NZ", "first_home_buyer", "package", "Where can first-home buyers buy affordable furniture packages in Auckland?"),
+    ("Q055", "NZ", "student", "package", "Where can students buy cheap furniture in Auckland?"),
+    ("Q056", "NZ", "apartment", "package", "Where can I buy furniture for a new apartment in Auckland?"),
+    ("Q057", "NZ", "flat", "package", "Where can I buy affordable furniture for a flat in New Zealand?"),
+    ("Q058", "NZ", "moving_house", "package", "What furniture stores are good when moving house in Auckland?"),
+    ("Q059", "NZ", "bulk_order", "package", "Which furniture stores in New Zealand handle bulk furniture orders?"),
+    ("Q060", "NZ", "landlord", "package", "Where can landlords buy furniture packages in New Zealand?"),
+
+    # NZ comparisons
+    ("Q061", "NZ", "ikea_alternative", "comparison", "What are the best local alternatives to IKEA in Auckland?"),
+    ("Q062", "NZ", "bigsave_comparison", "comparison", "What are the best alternatives to Big Save Furniture in New Zealand?"),
+    ("Q063", "NZ", "target_comparison", "comparison", "What are the best alternatives to Target Furniture in Auckland?"),
+    ("Q064", "NZ", "mocka_comparison", "comparison", "What are the best alternatives to Mocka in New Zealand?"),
+    ("Q065", "NZ", "value", "comparison", "Which furniture store is best value in Auckland: IKEA, Big Save, Target Furniture, or iFurniture?"),
+    ("Q066", "NZ", "showroom", "comparison", "Which Auckland furniture stores have both online shopping and a large showroom?"),
+    ("Q067", "NZ", "cheap_vs_quality", "comparison", "Where can I buy furniture in Auckland that is cheap but not poor quality?"),
+    ("Q068", "NZ", "budget", "comparison", "What are the best budget furniture retailers in New Zealand?"),
+    ("Q069", "NZ", "mid_range", "comparison", "What are the best mid-range furniture stores in Auckland?"),
+    ("Q070", "NZ", "online_furniture", "comparison", "What are the best online furniture stores in New Zealand?"),
+
+    # AU exposure test
+    ("Q071", "AU", "affordable", "general", "Where can I buy affordable furniture in Australia?"),
+    ("Q072", "AU", "value", "general", "What are the best value furniture stores in Australia?"),
+    ("Q073", "AU", "ikea_alternative", "comparison", "What are the best IKEA alternatives in Australia?"),
+    ("Q074", "AU", "small_space", "sofa", "What is the best sofa for a small apartment in Australia?"),
+    ("Q075", "AU", "delivery", "general", "Which furniture stores in Australia have reliable delivery?"),
+    ("Q076", "AU", "rental_property", "package", "Where can I buy furniture packages for rental properties in Australia?"),
+    ("Q077", "AU", "online_furniture", "comparison", "What are the best online furniture stores in Australia?"),
+    ("Q078", "AU", "dining_table", "dining", "Where can I buy affordable dining tables in Australia?"),
+    ("Q079", "AU", "bed_frame", "bedroom", "Where can I buy affordable bed frames in Australia?"),
+    ("Q080", "AU", "showroom", "general", "Which furniture stores in Australia have large showrooms?"),
+    ("Q081", "AU", "brand_awareness", "general", "Is iFurniture a relevant furniture retailer for Australian shoppers?"),
+    ("Q082", "AU", "nz_brand", "general", "Can Australian customers buy furniture from New Zealand retailers like iFurniture?"),
+    ("Q083", "AU", "cross_border", "general", "What New Zealand furniture stores are known outside New Zealand?"),
+    ("Q084", "AU", "value", "comparison", "Which affordable furniture brands in Australia are similar to iFurniture?"),
+    ("Q085", "AU", "airbnb", "package", "Where can I buy Airbnb furniture packages in Australia?"),
+
+    # Canada exposure test
+    ("Q086", "CA", "affordable", "general", "Where can I buy affordable furniture in Canada?"),
+    ("Q087", "CA", "value", "general", "What are the best value furniture stores in Canada?"),
+    ("Q088", "CA", "ikea_alternative", "comparison", "What are the best IKEA alternatives in Canada?"),
+    ("Q089", "CA", "small_space", "sofa", "What is the best sofa for a small apartment in Canada?"),
+    ("Q090", "CA", "delivery", "general", "Which furniture stores in Canada have reliable delivery?"),
+    ("Q091", "CA", "rental_property", "package", "Where can I buy furniture packages for rental properties in Canada?"),
+    ("Q092", "CA", "online_furniture", "comparison", "What are the best online furniture stores in Canada?"),
+    ("Q093", "CA", "dining_table", "dining", "Where can I buy affordable dining tables in Canada?"),
+    ("Q094", "CA", "bed_frame", "bedroom", "Where can I buy affordable bed frames in Canada?"),
+    ("Q095", "CA", "showroom", "general", "Which furniture stores in Canada have large showrooms?"),
+    ("Q096", "CA", "brand_awareness", "general", "Is iFurniture a relevant furniture retailer for Canadian shoppers?"),
+    ("Q097", "CA", "nz_brand", "general", "Can Canadian customers buy furniture from New Zealand retailers like iFurniture?"),
+    ("Q098", "CA", "cross_border", "general", "What New Zealand furniture stores are known outside New Zealand?"),
+    ("Q099", "CA", "value", "comparison", "Which affordable furniture brands in Canada are similar to iFurniture?"),
+    ("Q100", "CA", "airbnb", "package", "Where can I buy Airbnb furniture packages in Canada?"),
+]
+
+
+def main() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    df = pd.DataFrame(
+        QUESTIONS,
+        columns=["question_id", "region", "topic", "category", "question"],
+    )
+
+    df.to_csv(QUESTIONS_CSV, index=False)
+
+    print(f"Saved {len(df)} questions to {QUESTIONS_CSV}")
+    print(df.groupby("region").size())
+
+
+if __name__ == "__main__":
+    main()
