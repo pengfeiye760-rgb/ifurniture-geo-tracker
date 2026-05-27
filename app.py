@@ -33,6 +33,7 @@ COMPETITOR_DOMAINS = {
     "cintesi.co.nz",
     "kiwihomestore.co.nz",
     "lifestylefurniture.co.nz",
+    "harveynorman.co.nz",
 }
 
 MARKETPLACE_DOMAINS = {
@@ -61,7 +62,7 @@ AUTHORITY_DOMAINS = {
 
 
 st.set_page_config(
-    page_title="iFurniture GEO Performance Tracker",
+    page_title="iFurniture GEO 表现追踪器",
     page_icon="📊",
     layout="wide",
 )
@@ -76,34 +77,66 @@ def get_connection() -> sqlite3.Connection:
 def normalize_domain(domain: str) -> str:
     if not domain:
         return ""
-    return domain.strip().lower().replace("www.", "")
+    return str(domain).strip().lower().replace("www.", "")
 
 
 def classify_source(domain: str) -> str:
     domain = normalize_domain(domain)
 
     if domain in {"ifurniture.co.nz"}:
-        return "owned_ifurniture"
+        return "自有信源"
 
     if domain in COMMUNITY_DOMAINS:
-        return "community"
+        return "社区论坛"
 
     if domain in MARKETPLACE_DOMAINS:
-        return "marketplace"
+        return "交易平台"
 
     if domain in MEDIA_GUIDE_DOMAINS:
-        return "media_or_city_guide"
+        return "媒体/城市指南"
 
     if domain in AUTHORITY_DOMAINS:
-        return "authority_or_nonprofit"
+        return "公益/权威机构"
 
     if domain in COMPETITOR_DOMAINS:
-        return "competitor_or_retailer"
+        return "竞品/零售商"
 
     if domain.endswith(".co.nz") or domain.endswith(".nz"):
-        return "nz_local_source"
+        return "新西兰本地信源"
 
-    return "other"
+    return "其他信源"
+
+
+def translate_sentiment(value: str) -> str:
+    mapping = {
+        "positive": "正面",
+        "neutral": "中性",
+        "negative": "负面",
+        "not_mentioned": "未提及",
+    }
+    return mapping.get(str(value), str(value))
+
+
+def translate_status(value: str) -> str:
+    mapping = {
+        "planned": "计划中",
+        "in_progress": "进行中",
+        "published": "已发布",
+        "paused": "暂停",
+        "cancelled": "取消",
+    }
+    return mapping.get(str(value), str(value))
+
+
+def translate_impact(value: str) -> str:
+    mapping = {
+        "strong_positive": "显著正向",
+        "positive_or_promising": "有改善迹象",
+        "no_clear_change": "暂无明显变化",
+        "mixed_or_uncertain": "结果不确定",
+        "negative": "负向变化",
+    }
+    return mapping.get(str(value), str(value))
 
 
 def safe_json_loads(value, default):
@@ -128,19 +161,29 @@ def avg_rank(series: pd.Series) -> float | None:
     return float(ranks.mean())
 
 
-def format_float(value: Any, digits: int = 3) -> str:
-    if value is None or pd.isna(value):
-        return "NA"
-    return f"{float(value):.{digits}f}"
-
-
 def load_runs() -> pd.DataFrame:
     conn = get_connection()
     df = pd.read_sql_query(
         """
-        SELECT run_id, run_name, model, region, notes, created_at
-        FROM runs
-        ORDER BY run_id DESC;
+        SELECT
+            r.run_id,
+            r.run_name,
+            r.model,
+            r.region,
+            r.notes,
+            r.created_at,
+            COUNT(a.answer_id) AS answer_count
+        FROM runs r
+        LEFT JOIN answers a
+            ON r.run_id = a.run_id
+        GROUP BY
+            r.run_id,
+            r.run_name,
+            r.model,
+            r.region,
+            r.notes,
+            r.created_at
+        ORDER BY r.run_id DESC;
         """,
         conn,
     )
@@ -292,13 +335,13 @@ def build_brand_count(answers_df: pd.DataFrame) -> pd.DataFrame:
             counts[brand] = counts.get(brand, 0) + 1
 
     if not counts:
-        return pd.DataFrame(columns=["brand", "count"])
+        return pd.DataFrame(columns=["品牌", "出现次数"])
 
     return (
         pd.DataFrame(
-            [{"brand": brand, "count": count} for brand, count in counts.items()]
+            [{"品牌": brand, "出现次数": count} for brand, count in counts.items()]
         )
-        .sort_values("count", ascending=False)
+        .sort_values("出现次数", ascending=False)
         .reset_index(drop=True)
     )
 
@@ -312,13 +355,13 @@ def build_risk_count(answers_df: pd.DataFrame) -> pd.DataFrame:
             counts[phrase] = counts.get(phrase, 0) + 1
 
     if not counts:
-        return pd.DataFrame(columns=["risk_phrase", "count"])
+        return pd.DataFrame(columns=["风险短语", "出现次数"])
 
     return (
         pd.DataFrame(
-            [{"risk_phrase": phrase, "count": count} for phrase, count in counts.items()]
+            [{"风险短语": phrase, "出现次数": count} for phrase, count in counts.items()]
         )
-        .sort_values("count", ascending=False)
+        .sort_values("出现次数", ascending=False)
         .reset_index(drop=True)
     )
 
@@ -327,13 +370,13 @@ def build_domain_summary(sources_df: pd.DataFrame) -> pd.DataFrame:
     if sources_df.empty:
         return pd.DataFrame(
             columns=[
-                "domain",
-                "source_group",
-                "citation_count",
-                "question_count",
-                "topics",
-                "question_ids",
-                "example_url",
+                "信源域名",
+                "信源类型",
+                "引用次数",
+                "覆盖问题数",
+                "覆盖话题",
+                "问题编号",
+                "示例链接",
             ]
         )
 
@@ -342,15 +385,15 @@ def build_domain_summary(sources_df: pd.DataFrame) -> pd.DataFrame:
     for domain, g in sources_df.groupby("domain"):
         rows.append(
             {
-                "domain": domain,
-                "source_group": classify_source(domain),
-                "citation_count": len(g),
-                "question_count": g["question_id"].nunique(),
-                "topics": ", ".join(sorted(g["topic"].dropna().astype(str).unique())),
-                "question_ids": ", ".join(
+                "信源域名": domain,
+                "信源类型": classify_source(domain),
+                "引用次数": len(g),
+                "覆盖问题数": g["question_id"].nunique(),
+                "覆盖话题": ", ".join(sorted(g["topic"].dropna().astype(str).unique())),
+                "问题编号": ", ".join(
                     sorted(g["question_id"].dropna().astype(str).unique())
                 ),
-                "example_url": g["url"].dropna().iloc[0]
+                "示例链接": g["url"].dropna().iloc[0]
                 if len(g["url"].dropna())
                 else "",
             }
@@ -359,7 +402,7 @@ def build_domain_summary(sources_df: pd.DataFrame) -> pd.DataFrame:
     return (
         pd.DataFrame(rows)
         .sort_values(
-            ["question_count", "citation_count", "domain"],
+            ["覆盖问题数", "引用次数", "信源域名"],
             ascending=[False, False, True],
         )
         .reset_index(drop=True)
@@ -392,25 +435,26 @@ def build_question_source_summary(
         competitor_domains = [
             domain
             for domain in domains
-            if classify_source(domain) == "competitor_or_retailer"
+            if classify_source(domain) == "竞品/零售商"
         ]
 
         rows.append(
             {
-                "question_id": answer["question_id"],
-                "topic": answer["topic"],
-                "category": answer["category"],
-                "question": answer["question"],
-                "ifurniture_mentioned": bool(answer["ifurniture_mentioned"]),
-                "ifurniture_rank": answer["ifurniture_rank"],
-                "ifurniture_sentiment": answer["ifurniture_sentiment"],
-                "risk_mentioned": bool(answer["risk_mentioned"]),
-                "source_count": len(q_sources),
-                "unique_domain_count": len(domains),
-                "has_ifurniture_source": has_ifurniture_source,
-                "domains": ", ".join(domains),
-                "source_groups": ", ".join(source_groups),
-                "competitor_domains": ", ".join(competitor_domains),
+                "问题编号": answer["question_id"],
+                "地区": answer["region"],
+                "话题": answer["topic"],
+                "品类": answer["category"],
+                "问题": answer["question"],
+                "是否提到 iFurniture": bool(answer["ifurniture_mentioned"]),
+                "iFurniture 排名": answer["ifurniture_rank"],
+                "情感": translate_sentiment(answer["ifurniture_sentiment"]),
+                "是否提到风险": bool(answer["risk_mentioned"]),
+                "信源数量": len(q_sources),
+                "独立域名数量": len(domains),
+                "是否引用 ifurniture 官网": has_ifurniture_source,
+                "引用域名": ", ".join(domains),
+                "信源类型": ", ".join(source_groups),
+                "竞品信源": ", ".join(competitor_domains),
             }
         )
 
@@ -418,31 +462,31 @@ def build_question_source_summary(
 
 
 def recommend_action(row: pd.Series) -> str:
-    topic = str(row.get("topic", "")).lower()
-    question = str(row.get("question", "")).lower()
+    topic = str(row.get("话题", "")).lower()
+    question = str(row.get("问题", "")).lower()
 
     if "delivery" in topic or "delivery" in question:
-        return "Create / improve Logistics Transparency and Delivery Reliability page"
+        return "创建或优化物流透明度与可靠配送页面"
 
     if "small" in topic or "sofa" in question or "living room" in question:
-        return "Create Small Apartment Sofa / Small Living Room Sofa guide"
+        return "创建小户型沙发 / 小客厅沙发购买指南"
 
     if "first_home" in topic or "first-home" in question or "first home" in question:
-        return "Create First-home Buyer Furniture Guide"
+        return "创建首次置业者家具购买指南"
 
     if "dining" in topic or "dining table" in question:
-        return "Create Affordable Dining Tables NZ category guide"
+        return "创建新西兰高性价比餐桌购买指南"
 
     if "ikea" in topic or "ikea" in question:
-        return "Create IKEA Alternative NZ comparison page"
+        return "创建 IKEA 替代品牌对比页面"
 
     if "showroom" in topic or "showroom" in question:
-        return "Improve showroom page with structured facts and schema"
+        return "优化 Onehunga 展厅页面，增加结构化信息"
 
     if "rental" in topic or "airbnb" in question or "property" in question:
-        return "Strengthen rental property / Airbnb package pages"
+        return "强化出租房 / Airbnb / 房产投资家具套餐页面"
 
-    return "Create topic-specific GEO landing page and secure third-party citations"
+    return "创建对应话题的 GEO 落地页，并争取第三方信源引用"
 
 
 def build_opportunity_summary(question_df: pd.DataFrame) -> pd.DataFrame:
@@ -455,18 +499,18 @@ def build_opportunity_summary(question_df: pd.DataFrame) -> pd.DataFrame:
         reasons = []
         priority_score = 0
 
-        if not row["ifurniture_mentioned"]:
-            reasons.append("iFurniture not mentioned")
+        if not row["是否提到 iFurniture"]:
+            reasons.append("AI 回答中未提到 iFurniture")
             priority_score += 5
 
-        rank = row["ifurniture_rank"]
+        rank = row["iFurniture 排名"]
 
         if pd.notna(rank):
             try:
                 rank_int = int(rank)
 
                 if rank_int > 3:
-                    reasons.append(f"iFurniture rank is outside Top 3: {rank_int}")
+                    reasons.append(f"iFurniture 排名未进入前三，目前排名：{rank_int}")
                     priority_score += 3
                 elif rank_int == 1:
                     priority_score -= 2
@@ -474,51 +518,51 @@ def build_opportunity_summary(question_df: pd.DataFrame) -> pd.DataFrame:
             except Exception:
                 pass
 
-        if not row["has_ifurniture_source"]:
-            reasons.append("No ifurniture.co.nz source cited")
+        if not row["是否引用 ifurniture 官网"]:
+            reasons.append("AI 未引用 ifurniture.co.nz 作为信源")
             priority_score += 4
 
-        if row["competitor_domains"]:
-            reasons.append(f"Competitor sources cited: {row['competitor_domains']}")
+        if row["竞品信源"]:
+            reasons.append(f"存在竞品信源：{row['竞品信源']}")
             priority_score += 1
 
-        if row["risk_mentioned"]:
-            reasons.append("Risk phrase mentioned")
+        if row["是否提到风险"]:
+            reasons.append("回答中出现风险或负面短语")
             priority_score += 3
 
         if priority_score > 0:
             rows.append(
                 {
-                    "question_id": row["question_id"],
-                    "topic": row["topic"],
-                    "question": row["question"],
-                    "ifurniture_mentioned": row["ifurniture_mentioned"],
-                    "ifurniture_rank": row["ifurniture_rank"],
-                    "has_ifurniture_source": row["has_ifurniture_source"],
-                    "priority_score": priority_score,
-                    "opportunity_reason": " | ".join(reasons),
-                    "recommended_action_type": recommend_action(row),
+                    "问题编号": row["问题编号"],
+                    "话题": row["话题"],
+                    "问题": row["问题"],
+                    "是否提到 iFurniture": row["是否提到 iFurniture"],
+                    "iFurniture 排名": row["iFurniture 排名"],
+                    "是否引用 ifurniture 官网": row["是否引用 ifurniture 官网"],
+                    "优先级分数": priority_score,
+                    "机会原因": " | ".join(reasons),
+                    "建议行动": recommend_action(row),
                 }
             )
 
     if not rows:
         return pd.DataFrame(
             columns=[
-                "question_id",
-                "topic",
-                "question",
-                "ifurniture_mentioned",
-                "ifurniture_rank",
-                "has_ifurniture_source",
-                "priority_score",
-                "opportunity_reason",
-                "recommended_action_type",
+                "问题编号",
+                "话题",
+                "问题",
+                "是否提到 iFurniture",
+                "iFurniture 排名",
+                "是否引用 ifurniture 官网",
+                "优先级分数",
+                "机会原因",
+                "建议行动",
             ]
         )
 
     return (
         pd.DataFrame(rows)
-        .sort_values(["priority_score", "question_id"], ascending=[False, True])
+        .sort_values(["优先级分数", "问题编号"], ascending=[False, True])
         .reset_index(drop=True)
     )
 
@@ -701,41 +745,41 @@ def build_action_impact(
 
         rows.append(
             {
-                "action_id": action["action_id"],
-                "action_name": action["action_name"],
-                "status": action["status"],
-                "target_topic": topic,
-                "target_source": action["target_source"],
-                "expected_impact": action["expected_impact"],
-                "publish_date": action["publish_date"],
-                "before_run_id": before_run_id,
-                "after_run_id": after_run_id,
-                "before_sample_count": before["sample_count"],
-                "after_sample_count": after["sample_count"],
-                "before_visibility": before["visibility_rate"],
-                "after_visibility": after["visibility_rate"],
-                "visibility_lift": lift["visibility_lift"],
-                "before_first_rate": before["first_rate"],
-                "after_first_rate": after["first_rate"],
-                "first_rate_lift": lift["first_rate_lift"],
-                "before_top3_rate": before["top3_rate"],
-                "after_top3_rate": after["top3_rate"],
-                "top3_rate_lift": lift["top3_rate_lift"],
-                "before_risk_rate": before["risk_rate"],
-                "after_risk_rate": after["risk_rate"],
-                "risk_rate_change": lift["risk_rate_change"],
-                "before_avg_rank": before["avg_rank"],
-                "after_avg_rank": after["avg_rank"],
-                "avg_rank_change": lift["avg_rank_change"],
-                "before_source_coverage": before["ifurniture_source_coverage"],
-                "after_source_coverage": after["ifurniture_source_coverage"],
-                "source_coverage_lift": lift["source_coverage_lift"],
-                "before_ifurniture_source_citations": before["ifurniture_source_citations"],
-                "after_ifurniture_source_citations": after["ifurniture_source_citations"],
-                "source_citation_change": lift["source_citation_change"],
-                "before_source_domains": before["source_domains"],
-                "after_source_domains": after["source_domains"],
-                "impact_judgement": impact_judgement,
+                "行动ID": action["action_id"],
+                "行动名称": action["action_name"],
+                "状态": translate_status(action["status"]),
+                "目标话题": topic,
+                "目标信源": action["target_source"],
+                "预期影响": action["expected_impact"],
+                "发布日期": action["publish_date"],
+                "Before Run": before_run_id,
+                "After Run": after_run_id,
+                "Before 样本数": before["sample_count"],
+                "After 样本数": after["sample_count"],
+                "Before 曝光率": before["visibility_rate"],
+                "After 曝光率": after["visibility_rate"],
+                "曝光率变化": lift["visibility_lift"],
+                "Before 首位推荐率": before["first_rate"],
+                "After 首位推荐率": after["first_rate"],
+                "首位推荐率变化": lift["first_rate_lift"],
+                "Before Top3率": before["top3_rate"],
+                "After Top3率": after["top3_rate"],
+                "Top3率变化": lift["top3_rate_lift"],
+                "Before 风险率": before["risk_rate"],
+                "After 风险率": after["risk_rate"],
+                "风险率变化": lift["risk_rate_change"],
+                "Before 平均排名": before["avg_rank"],
+                "After 平均排名": after["avg_rank"],
+                "平均排名变化": lift["avg_rank_change"],
+                "Before 官网信源覆盖率": before["ifurniture_source_coverage"],
+                "After 官网信源覆盖率": after["ifurniture_source_coverage"],
+                "官网信源覆盖率变化": lift["source_coverage_lift"],
+                "Before 官网引用次数": before["ifurniture_source_citations"],
+                "After 官网引用次数": after["ifurniture_source_citations"],
+                "官网引用次数变化": lift["source_citation_change"],
+                "Before 信源域名": before["source_domains"],
+                "After 信源域名": after["source_domains"],
+                "效果判断": translate_impact(impact_judgement),
             }
         )
 
@@ -753,31 +797,40 @@ def download_button_for_df(label: str, df: pd.DataFrame, file_name: str) -> None
 
 
 def main():
-    st.title("📊 iFurniture GEO Performance Tracker")
+    st.title("📊 iFurniture GEO 表现追踪器")
     st.caption(
-        "MVP dashboard: AI visibility, recommendation rank, source coverage, priority GEO opportunities, action tracking, and impact comparison."
+        "MVP 仪表盘：追踪 AI 曝光、推荐排名、信源引用、优先优化机会、行动记录和行动效果。"
     )
 
     if not Path(DB_PATH).exists():
-        st.error("Database not found. Please run: python src/run_batch.py")
+        st.error("未找到数据库。请确认 data/geo_tracker.db 已上传到 GitHub。")
         return
 
     runs_df = load_runs()
 
     if runs_df.empty:
-        st.warning("No runs found. Please run: python src/run_batch.py")
+        st.warning("暂无运行记录。请先运行 python src/run_batch.py")
         return
 
-    st.sidebar.header("Run Selection")
+    st.sidebar.header("运行批次选择")
 
     run_options = {
-        f"Run {row.run_id} | {row.created_at} | {row.model}": row.run_id
+        f"Run {row.run_id} | 样本数 {row.answer_count} | {row.created_at}": row.run_id
         for row in runs_df.itertuples()
     }
 
+    labels = list(run_options.keys())
+
+    default_index = 0
+    for i, row in enumerate(runs_df.itertuples()):
+        if int(row.run_id) == 6:
+            default_index = i
+            break
+
     selected_label = st.sidebar.selectbox(
-        "Select a run",
-        options=list(run_options.keys()),
+        "选择一个运行批次",
+        options=labels,
+        index=default_index,
     )
 
     selected_run_id = run_options[selected_label]
@@ -786,46 +839,50 @@ def main():
     answers_df = load_answers(selected_run_id)
     sources_df = load_sources(selected_run_id)
 
-    st.sidebar.markdown("### Run Info")
-    st.sidebar.write(f"**Run ID:** {selected_run['run_id']}")
-    st.sidebar.write(f"**Model:** {selected_run['model']}")
-    st.sidebar.write(f"**Region:** {selected_run['region']}")
-    st.sidebar.write(f"**Created:** {selected_run['created_at']}")
-    st.sidebar.write(f"**Notes:** {selected_run['notes']}")
+    st.sidebar.markdown("### 当前批次信息")
+    st.sidebar.write(f"**Run ID：** {selected_run['run_id']}")
+    st.sidebar.write(f"**样本数：** {selected_run['answer_count']}")
+    st.sidebar.write(f"**模型：** {selected_run['model']}")
+    st.sidebar.write(f"**地区：** {selected_run['region']}")
+    st.sidebar.write(f"**创建时间：** {selected_run['created_at']}")
+    st.sidebar.write(f"**备注：** {selected_run['notes']}")
+
+    if selected_run["answer_count"] < 100 and selected_run_id != 6:
+        st.sidebar.warning("当前批次样本数较少，可能是未完成的测试 run。老板演示建议选择 Run 6。")
 
     if answers_df.empty:
-        st.warning("No answers found for this run.")
+        st.warning("当前批次没有回答数据。")
         return
 
     metrics = calculate_metrics(answers_df, sources_df)
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Questions", metrics["total"])
-    col2.metric("AI Visibility", f"{metrics['visibility']:.0%}")
-    col3.metric("First Recommendation", f"{metrics['first_rate']:.0%}")
-    col4.metric("Top-3 Rate", f"{metrics['top3_rate']:.0%}")
+    col1.metric("问题/样本数", metrics["total"])
+    col2.metric("AI 曝光率", f"{metrics['visibility']:.0%}")
+    col3.metric("首位推荐率", f"{metrics['first_rate']:.0%}")
+    col4.metric("Top-3 推荐率", f"{metrics['top3_rate']:.0%}")
 
     col5, col6, col7, col8 = st.columns(4)
-    col5.metric("Risk Mention", f"{metrics['risk_rate']:.0%}")
-    col6.metric("iFurniture Source Coverage", f"{metrics['ifurniture_source_coverage']:.0%}")
-    col7.metric("Source Citations", metrics["total_sources"])
-    col8.metric("Unique Domains", metrics["unique_domains"])
+    col5.metric("风险提及率", f"{metrics['risk_rate']:.0%}")
+    col6.metric("官网信源覆盖率", f"{metrics['ifurniture_source_coverage']:.0%}")
+    col7.metric("信源引用次数", metrics["total_sources"])
+    col8.metric("独立信源域名数", metrics["unique_domains"])
 
     st.divider()
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         [
-            "Overview",
-            "Source Intelligence",
-            "Priority Opportunities",
-            "Raw Answers",
-            "Action Tracker",
-            "Action Impact",
+            "总览",
+            "信源分析",
+            "优先机会",
+            "原始回答",
+            "行动追踪",
+            "行动效果",
         ]
     )
 
     with tab1:
-        st.subheader("Question-Level GEO Results")
+        st.subheader("问题级 GEO 结果")
 
         display_df = answers_df[
             [
@@ -841,117 +898,116 @@ def main():
             ]
         ].copy()
 
-        display_df["ifurniture_mentioned"] = display_df["ifurniture_mentioned"].astype(bool)
-        display_df["risk_mentioned"] = display_df["risk_mentioned"].astype(bool)
-
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
+        display_df = display_df.rename(
+            columns={
+                "question_id": "问题编号",
+                "region": "地区",
+                "topic": "话题",
+                "category": "品类",
+                "ifurniture_mentioned": "是否提到 iFurniture",
+                "ifurniture_rank": "iFurniture 排名",
+                "ifurniture_sentiment": "情感",
+                "risk_mentioned": "是否提到风险",
+                "question": "问题",
+            }
         )
+
+        display_df["是否提到 iFurniture"] = display_df["是否提到 iFurniture"].astype(bool)
+        display_df["是否提到风险"] = display_df["是否提到风险"].astype(bool)
+        display_df["情感"] = display_df["情感"].apply(translate_sentiment)
+
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
 
         col_left, col_right = st.columns(2)
 
         with col_left:
-            st.subheader("Top Mentioned Brands")
+            st.subheader("高频出现品牌")
             brand_df = build_brand_count(answers_df)
 
             if brand_df.empty:
-                st.info("No brand data found.")
+                st.info("暂无品牌统计数据。")
             else:
-                st.bar_chart(brand_df.set_index("brand")["count"])
+                st.bar_chart(brand_df.set_index("品牌")["出现次数"])
                 st.dataframe(brand_df, use_container_width=True, hide_index=True)
 
         with col_right:
-            st.subheader("Risk Phrases")
+            st.subheader("风险短语")
             risk_df = build_risk_count(answers_df)
 
             if risk_df.empty:
-                st.success("No risk phrases found in this run.")
+                st.success("当前批次未发现风险短语。")
             else:
-                st.bar_chart(risk_df.set_index("risk_phrase")["count"])
+                st.bar_chart(risk_df.set_index("风险短语")["出现次数"])
                 st.dataframe(risk_df, use_container_width=True, hide_index=True)
 
     with tab2:
-        st.subheader("Top Source Domains")
+        st.subheader("高频信源域名")
 
         domain_summary_df = build_domain_summary(sources_df)
 
         if domain_summary_df.empty:
-            st.info("No source citations found. Try running with use_web_search=True.")
+            st.info("暂无信源引用。请确认该批次使用了 web_search=True。")
         else:
-            chart_df = domain_summary_df.head(15).set_index("domain")["question_count"]
+            chart_df = domain_summary_df.head(15).set_index("信源域名")["覆盖问题数"]
             st.bar_chart(chart_df)
 
-            st.dataframe(
-                domain_summary_df,
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.dataframe(domain_summary_df, use_container_width=True, hide_index=True)
 
             download_button_for_df(
-                "Download Source Domain Summary CSV",
+                "下载信源域名统计 CSV",
                 domain_summary_df,
                 f"source_domain_summary_run_{selected_run_id}.csv",
             )
 
         st.divider()
 
-        st.subheader("Question-Level Source Coverage")
+        st.subheader("问题级信源覆盖")
 
         question_source_df = build_question_source_summary(answers_df, sources_df)
 
         if question_source_df.empty:
-            st.info("No question-level source summary found.")
+            st.info("暂无问题级信源统计。")
         else:
-            st.dataframe(
-                question_source_df,
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.dataframe(question_source_df, use_container_width=True, hide_index=True)
 
             download_button_for_df(
-                "Download Question Source Summary CSV",
+                "下载问题级信源统计 CSV",
                 question_source_df,
                 f"question_source_summary_run_{selected_run_id}.csv",
             )
 
     with tab3:
-        st.subheader("Priority GEO Opportunities")
+        st.subheader("优先 GEO 优化机会")
 
         question_source_df = build_question_source_summary(answers_df, sources_df)
         opportunity_df = build_opportunity_summary(question_source_df)
 
         if opportunity_df.empty:
-            st.success("No priority opportunities found in this run.")
+            st.success("当前批次暂无高优先级优化机会。")
         else:
             top_priority = opportunity_df.head(5)
 
             for _, row in top_priority.iterrows():
                 with st.container(border=True):
                     st.markdown(
-                        f"### {row['question_id']} | {row['topic']} | Priority Score: {row['priority_score']}"
+                        f"### {row['问题编号']} | {row['话题']} | 优先级分数：{row['优先级分数']}"
                     )
-                    st.write(f"**Question:** {row['question']}")
-                    st.write(f"**Recommended Action:** {row['recommended_action_type']}")
-                    st.write(f"**Reason:** {row['opportunity_reason']}")
+                    st.write(f"**问题：** {row['问题']}")
+                    st.write(f"**建议行动：** {row['建议行动']}")
+                    st.write(f"**机会原因：** {row['机会原因']}")
 
             st.divider()
 
-            st.dataframe(
-                opportunity_df,
-                use_container_width=True,
-                hide_index=True,
-            )
+            st.dataframe(opportunity_df, use_container_width=True, hide_index=True)
 
             download_button_for_df(
-                "Download Priority Opportunities CSV",
+                "下载优先机会 CSV",
                 opportunity_df,
                 f"source_opportunities_run_{selected_run_id}.csv",
             )
 
     with tab4:
-        st.subheader("Raw AI Answers")
+        st.subheader("原始 AI 回答")
 
         question_labels = {
             f"{row.question_id} | {row.topic} | rank={row.ifurniture_rank} | {row.question[:70]}": row.answer_id
@@ -959,7 +1015,7 @@ def main():
         }
 
         selected_question_label = st.selectbox(
-            "Select an answer to inspect",
+            "选择一条回答查看",
             options=list(question_labels.keys()),
         )
 
@@ -968,88 +1024,127 @@ def main():
             answers_df["answer_id"] == selected_answer_id
         ].iloc[0]
 
-        st.markdown("### Question")
+        st.markdown("### 问题")
         st.write(selected_answer["question"])
 
-        st.markdown("### AI Answer")
+        st.markdown("### AI 原始回答")
         st.write(selected_answer["raw_answer"])
 
-        st.markdown("### Extracted Features")
+        st.markdown("### 解析结果")
 
         extracted = {
-            "ifurniture_mentioned": bool(selected_answer["ifurniture_mentioned"]),
-            "ifurniture_rank": selected_answer["ifurniture_rank"],
-            "ifurniture_sentiment": selected_answer["ifurniture_sentiment"],
-            "risk_mentioned": bool(selected_answer["risk_mentioned"]),
-            "risk_phrases": safe_json_loads(selected_answer["risk_phrases_json"], []),
-            "brands": safe_json_loads(selected_answer["brands_json"], []),
-            "sources": safe_json_loads(selected_answer["sources_json"], []),
+            "是否提到 iFurniture": bool(selected_answer["ifurniture_mentioned"]),
+            "iFurniture 排名": selected_answer["ifurniture_rank"],
+            "情感": translate_sentiment(selected_answer["ifurniture_sentiment"]),
+            "是否提到风险": bool(selected_answer["risk_mentioned"]),
+            "风险短语": safe_json_loads(selected_answer["risk_phrases_json"], []),
+            "提到的品牌": safe_json_loads(selected_answer["brands_json"], []),
+            "信源": safe_json_loads(selected_answer["sources_json"], []),
         }
 
         st.json(extracted)
 
-        st.markdown("### Cited Sources for This Answer")
+        st.markdown("### 该回答引用的信源")
 
         if sources_df.empty:
-            st.info("No source citations found for this run.")
+            st.info("当前批次没有信源引用。")
         else:
             q_sources = sources_df[sources_df["answer_id"] == selected_answer_id]
 
             if q_sources.empty:
-                st.info("No source citations found for this answer.")
+                st.info("该回答没有信源引用。")
             else:
-                st.dataframe(
-                    q_sources[
-                        [
-                            "domain",
-                            "source_group",
-                            "url",
-                            "source_type",
-                            "used_for",
-                        ]
-                    ],
-                    use_container_width=True,
-                    hide_index=True,
+                source_display = q_sources[
+                    [
+                        "domain",
+                        "source_group",
+                        "url",
+                        "source_type",
+                        "used_for",
+                    ]
+                ].copy()
+
+                source_display = source_display.rename(
+                    columns={
+                        "domain": "信源域名",
+                        "source_group": "信源类型",
+                        "url": "链接",
+                        "source_type": "引用类型",
+                        "used_for": "引用标题/用途",
+                    }
                 )
 
+                st.dataframe(source_display, use_container_width=True, hide_index=True)
+
     with tab5:
-        st.subheader("GEO Action Tracker")
+        st.subheader("GEO 行动追踪")
 
         actions_df = load_actions()
 
         if actions_df.empty:
-            st.warning("No actions found. Please run: python src/action_log.py --import-csv")
+            st.warning("暂无行动记录。请先运行：python src/action_log.py --import-csv")
         else:
-            total_actions = len(actions_df)
-            planned_count = (actions_df["status"] == "planned").sum()
-            published_count = (actions_df["status"] == "published").sum()
-            in_progress_count = (actions_df["status"] == "in_progress").sum()
+            actions_display_df = actions_df.copy()
+            actions_display_df["status_cn"] = actions_display_df["status"].apply(translate_status)
+
+            total_actions = len(actions_display_df)
+            planned_count = (actions_display_df["status"] == "planned").sum()
+            published_count = (actions_display_df["status"] == "published").sum()
+            in_progress_count = (actions_display_df["status"] == "in_progress").sum()
 
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Actions", total_actions)
-            c2.metric("Planned", planned_count)
-            c3.metric("In Progress", in_progress_count)
-            c4.metric("Published", published_count)
+            c1.metric("行动总数", total_actions)
+            c2.metric("计划中", planned_count)
+            c3.metric("进行中", in_progress_count)
+            c4.metric("已发布", published_count)
 
             st.divider()
 
-            st.markdown("### Action Log")
+            st.markdown("### 行动台账")
 
-            st.dataframe(
-                actions_df,
-                use_container_width=True,
-                hide_index=True,
+            action_table = actions_display_df[
+                [
+                    "action_id",
+                    "action_name",
+                    "action_type",
+                    "target_region",
+                    "target_topic",
+                    "target_source",
+                    "expected_impact",
+                    "status_cn",
+                    "start_date",
+                    "publish_date",
+                    "notes",
+                ]
+            ].copy()
+
+            action_table = action_table.rename(
+                columns={
+                    "action_id": "行动ID",
+                    "action_name": "行动名称",
+                    "action_type": "行动类型",
+                    "target_region": "目标地区",
+                    "target_topic": "目标话题",
+                    "target_source": "目标信源",
+                    "expected_impact": "预期影响",
+                    "status_cn": "状态",
+                    "start_date": "开始日期",
+                    "publish_date": "发布日期",
+                    "notes": "备注",
+                }
             )
 
+            st.dataframe(action_table, use_container_width=True, hide_index=True)
+
             download_button_for_df(
-                "Download Action Log CSV",
-                actions_df,
+                "下载行动台账 CSV",
+                action_table,
                 "geo_action_log.csv",
             )
 
             st.divider()
 
-            st.markdown("### Priority Actions")
+            st.markdown("### 优先行动")
 
             priority_topics = [
                 "delivery",
@@ -1068,72 +1163,76 @@ def main():
 
                 for _, row in topic_actions.iterrows():
                     with st.container(border=True):
-                        st.markdown(
-                            f"### {row['action_id']} | {row['action_name']}"
-                        )
-                        st.write(f"**Status:** {row['status']}")
-                        st.write(f"**Target Topic:** {row['target_topic']}")
-                        st.write(f"**Action Type:** {row['action_type']}")
-                        st.write(f"**Target Source:** {row['target_source']}")
-                        st.write(f"**Expected Impact:** {row['expected_impact']}")
-                        st.write(f"**Start Date:** {row['start_date']}")
+                        st.markdown(f"### {row['action_id']} | {row['action_name']}")
+                        st.write(f"**状态：** {translate_status(row['status'])}")
+                        st.write(f"**目标话题：** {row['target_topic']}")
+                        st.write(f"**行动类型：** {row['action_type']}")
+                        st.write(f"**目标信源：** {row['target_source']}")
+                        st.write(f"**预期影响：** {row['expected_impact']}")
+                        st.write(f"**开始日期：** {row['start_date']}")
                         st.write(
-                            f"**Publish Date:** {row['publish_date'] if row['publish_date'] else 'Not published yet'}"
+                            f"**发布日期：** {row['publish_date'] if row['publish_date'] else '尚未发布'}"
                         )
-                        st.write(f"**Notes:** {row['notes']}")
+                        st.write(f"**备注：** {row['notes']}")
 
             st.divider()
 
-            st.markdown("### How to Update Action Status")
+            st.markdown("### 如何更新行动状态")
 
             st.code(
                 """
-# Example: mark action 1 as in progress
+# 示例：将行动 1 标记为进行中
 python src/action_log.py --action-id 1 --update-status in_progress
 
-# Example: mark action 1 as published
+# 示例：将行动 1 标记为已发布
 python src/action_log.py --action-id 1 --update-status published --publish-date 2026-05-28
                 """.strip(),
                 language="bash",
             )
 
     with tab6:
-        st.subheader("Action Impact Comparison")
+        st.subheader("行动效果对比")
 
         actions_df = load_actions()
 
         if actions_df.empty:
-            st.warning("No actions found. Please run: python src/action_log.py --import-csv")
+            st.warning("暂无行动记录。请先运行：python src/action_log.py --import-csv")
         else:
             st.markdown(
                 """
-                Compare one baseline run against a later run to estimate whether GEO actions improved
-                visibility, ranking, source coverage, or risk metrics.
+                选择一个行动前的基准 run 和一个行动后的 run，比较 GEO 指标是否出现提升。
+                当前如果选择同一个 run，结果应为「暂无明显变化」。
                 """
             )
 
             run_labels = {
-                f"Run {row.run_id} | {row.created_at} | {row.notes}": row.run_id
+                f"Run {row.run_id} | 样本数 {row.answer_count} | {row.created_at}": row.run_id
                 for row in runs_df.itertuples()
             }
 
             labels = list(run_labels.keys())
 
+            default_before_index = 0
+            for i, row in enumerate(runs_df.itertuples()):
+                if int(row.run_id) == 6:
+                    default_before_index = i
+                    break
+
             c1, c2 = st.columns(2)
 
             with c1:
                 before_label = st.selectbox(
-                    "Before run",
+                    "Before run（行动前）",
                     options=labels,
-                    index=0 if labels else None,
+                    index=default_before_index,
                     key="before_run_select",
                 )
 
             with c2:
                 after_label = st.selectbox(
-                    "After run",
+                    "After run（行动后）",
                     options=labels,
-                    index=0 if labels else None,
+                    index=default_before_index,
                     key="after_run_select",
                 )
 
@@ -1156,91 +1255,86 @@ python src/action_log.py --action-id 1 --update-status published --publish-date 
             )
 
             if impact_df.empty:
-                st.info("No impact data available.")
+                st.info("暂无可对比的行动效果数据。")
             else:
-                st.markdown("### Impact Summary")
+                st.markdown("### 效果概览")
 
                 total_actions = len(impact_df)
-                strong_positive = (impact_df["impact_judgement"] == "strong_positive").sum()
-                promising = (impact_df["impact_judgement"] == "positive_or_promising").sum()
-                no_change = (impact_df["impact_judgement"] == "no_clear_change").sum()
-                negative = (impact_df["impact_judgement"] == "negative").sum()
+                strong_positive = (impact_df["效果判断"] == "显著正向").sum()
+                promising = (impact_df["效果判断"] == "有改善迹象").sum()
+                no_change = (impact_df["效果判断"] == "暂无明显变化").sum()
+                negative = (impact_df["效果判断"] == "负向变化").sum()
 
                 m1, m2, m3, m4, m5 = st.columns(5)
-                m1.metric("Actions Compared", total_actions)
-                m2.metric("Strong Positive", strong_positive)
-                m3.metric("Promising", promising)
-                m4.metric("No Clear Change", no_change)
-                m5.metric("Negative", negative)
+                m1.metric("对比行动数", total_actions)
+                m2.metric("显著正向", strong_positive)
+                m3.metric("有改善迹象", promising)
+                m4.metric("暂无明显变化", no_change)
+                m5.metric("负向变化", negative)
 
                 st.divider()
 
-                st.markdown("### Action-Level Impact Cards")
+                st.markdown("### 行动级效果卡片")
 
                 for _, row in impact_df.iterrows():
                     with st.container(border=True):
-                        st.markdown(
-                            f"### {row['action_id']} | {row['action_name']}"
-                        )
+                        st.markdown(f"### {row['行动ID']} | {row['行动名称']}")
 
                         st.write(
-                            f"**Topic:** {row['target_topic']} | "
-                            f"**Status:** {row['status']} | "
-                            f"**Judgement:** {row['impact_judgement']}"
+                            f"**目标话题：** {row['目标话题']} | "
+                            f"**状态：** {row['状态']} | "
+                            f"**效果判断：** {row['效果判断']}"
                         )
 
                         a, b, c, d = st.columns(4)
 
                         a.metric(
-                            "Visibility",
-                            f"{row['after_visibility']:.0%}",
-                            f"{row['visibility_lift']:+.0%}",
+                            "曝光率",
+                            f"{row['After 曝光率']:.0%}",
+                            f"{row['曝光率变化']:+.0%}",
                         )
 
                         b.metric(
-                            "Top-3 Rate",
-                            f"{row['after_top3_rate']:.0%}",
-                            f"{row['top3_rate_lift']:+.0%}",
+                            "Top-3 率",
+                            f"{row['After Top3率']:.0%}",
+                            f"{row['Top3率变化']:+.0%}",
                         )
 
                         c.metric(
-                            "Source Coverage",
-                            f"{row['after_source_coverage']:.0%}",
-                            f"{row['source_coverage_lift']:+.0%}",
+                            "官网信源覆盖率",
+                            f"{row['After 官网信源覆盖率']:.0%}",
+                            f"{row['官网信源覆盖率变化']:+.0%}",
                         )
 
-                        if pd.isna(row["after_avg_rank"]):
+                        if pd.isna(row["After 平均排名"]):
                             rank_value = "NA"
                         else:
-                            rank_value = f"{row['after_avg_rank']:.2f}"
+                            rank_value = f"{row['After 平均排名']:.2f}"
 
-                        if pd.isna(row["avg_rank_change"]):
+                        if pd.isna(row["平均排名变化"]):
                             rank_delta = "NA"
                         else:
-                            rank_delta = f"{row['avg_rank_change']:+.2f}"
+                            rank_delta = f"{row['平均排名变化']:+.2f}"
 
                         d.metric(
-                            "Avg Rank",
+                            "平均排名",
                             rank_value,
                             rank_delta,
+                            help="排名数字越小越好，例如 1 优于 3。",
                         )
 
-                        st.write(f"**Expected Impact:** {row['expected_impact']}")
-                        st.write(f"**Before Domains:** {row['before_source_domains']}")
-                        st.write(f"**After Domains:** {row['after_source_domains']}")
+                        st.write(f"**预期影响：** {row['预期影响']}")
+                        st.write(f"**Before 信源：** {row['Before 信源域名']}")
+                        st.write(f"**After 信源：** {row['After 信源域名']}")
 
                 st.divider()
 
-                st.markdown("### Impact Data Table")
+                st.markdown("### 效果对比数据表")
 
-                st.dataframe(
-                    impact_df,
-                    use_container_width=True,
-                    hide_index=True,
-                )
+                st.dataframe(impact_df, use_container_width=True, hide_index=True)
 
                 download_button_for_df(
-                    "Download Action Impact CSV",
+                    "下载行动效果对比 CSV",
                     impact_df,
                     f"action_impact_before_{before_run_id}_after_{after_run_id}.csv",
                 )
